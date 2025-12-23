@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Knowledge Assistant</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h1 class="logo">📚 Knowledge</h1>
+                <button class="btn-icon" id="toggle-sidebar" title="Toggle Sidebar">☰</button>
+            </div>
+            
+            <div class="sidebar-search">
+                <input type="text" id="search-input" placeholder="Search documents..." />
+            </div>
+            
+            <nav class="sidebar-nav">
+                <button class="nav-item active" data-view="documents">
+                    <span class="nav-icon">📄</span>
+                    <span class="nav-text">Documents</span>
+                </button>
+                <button class="nav-item" data-view="chat">
+                    <span class="nav-icon">💬</span>
+                    <span class="nav-text">Chat</span>
+                </button>
+                <button class="nav-item" data-view="search">
+                    <span class="nav-icon">🔍</span>
+                    <span class="nav-text">Semantic Search</span>
+                </button>
+                <button class="nav-item" data-view="graph">
+                    <span class="nav-icon">🕸️</span>
+                    <span class="nav-text">Knowledge Graph</span>
+                </button>
+            </nav>
+            
+            <div class="sidebar-section">
+                <div class="section-header">
+                    <span>Tags</span>
+                </div>
+                <div id="tags-list" class="tags-list">
+                    <!-- Tags loaded dynamically -->
+                </div>
+            </div>
+            
+            <div class="sidebar-section">
+                <div class="section-header">
+                    <span>Recent Documents</span>
+                </div>
+                <div id="recent-docs" class="recent-docs">
+                    <!-- Recent docs loaded dynamically -->
+                </div>
+            </div>
+            
+            <div class="sidebar-footer">
+                <div class="stats" id="stats">
+                    <span>0 documents</span>
+                    <span>0 chunks</span>
+                </div>
+            </div>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Documents View -->
+            <div id="view-documents" class="view active">
+                <header class="view-header">
+                    <h2>Documents</h2>
+                    <div class="header-actions">
+                        <button class="btn btn-primary" id="btn-new-doc">
+                            <span>+ New Document</span>
+                        </button>
+                        <button class="btn" id="btn-upload">
+                            <span>📁 Upload</span>
+                        </button>
+                    </div>
+                </header>
+                
+                <div class="documents-grid" id="documents-grid">
+                    <!-- Documents loaded dynamically -->
+                </div>
+            </div>
+            
+            <!-- Chat View -->
+            <div id="view-chat" class="view">
+                <header class="view-header">
+                    <h2>Chat with Knowledge Base</h2>
+                    <div class="header-actions">
+                        <button class="btn" id="btn-new-chat">+ New Chat</button>
+                        <label class="toggle-label">
+                            <input type="checkbox" id="toggle-rag" checked>
+                            <span>Use RAG</span>
+                        </label>
+                    </div>
+                </header>
+                
+                <div class="chat-container">
+                    <div class="chat-messages" id="chat-messages">
+                        <div class="welcome-message">
+                            <h3>👋 Welcome to Knowledge Assistant</h3>
+                            <p>Ask questions about your documents. I'll search your knowledge base and provide relevant answers.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="chat-input-container">
+                        <div class="context-preview" id="context-preview" style="display: none;">
+                            <span class="context-label">Retrieved context:</span>
+                            <div class="context-items" id="context-items"></div>
+                        </div>
+                        <div class="chat-input-wrapper">
+                            <textarea id="chat-input" placeholder="Ask a question..." rows="1"></textarea>
+                            <button class="btn btn-primary" id="btn-send">Send</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Search View -->
+            <div id="view-search" class="view">
+                <header class="view-header">
+                    <h2>Semantic Search</h2>
+                </header>
+                
+                <div class="search-container">
+                    <div class="search-box">
+                        <input type="text" id="semantic-search-input" placeholder="Search your knowledge base...">
+                        <button class="btn btn-primary" id="btn-search">Search</button>
+                    </div>
+                    
+                    <div class="search-results" id="search-results">
+                        <!-- Results loaded dynamically -->
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Graph View -->
+            <div id="view-graph" class="view">
+                <header class="view-header">
+                    <h2>Knowledge Graph</h2>
+                </header>
+                <div class="graph-container" id="graph-container">
+                    <p class="placeholder-text">Knowledge graph visualization coming soon...</p>
+                </div>
+            </div>
+        </main>
+        
+        <!-- Document Editor Modal -->
+        <div class="modal" id="editor-modal">
+            <div class="modal-content modal-large">
+                <div class="modal-header">
+                    <input type="text" id="doc-title" placeholder="Document Title" class="title-input">
+                    <button class="btn-icon modal-close" id="close-editor">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="editor-container">
+                        <div class="editor-toolbar">
+                            <button class="toolbar-btn" data-action="bold" title="Bold">B</button>
+                            <button class="toolbar-btn" data-action="italic" title="Italic">I</button>
+                            <button class="toolbar-btn" data-action="heading" title="Heading">H</button>
+                            <button class="toolbar-btn" data-action="link" title="Link">🔗</button>
+                            <button class="toolbar-btn" data-action="code" title="Code">&lt;/&gt;</button>
+                            <span class="toolbar-separator"></span>
+                            <button class="toolbar-btn" data-action="preview" title="Preview">👁</button>
+                        </div>
+                        <div class="editor-main">
+                            <textarea id="doc-content" placeholder="Write your document in Markdown..."></textarea>
+                            <div id="doc-preview" class="doc-preview" style="display: none;"></div>
+                        </div>
+                    </div>
+                    <div class="editor-sidebar">
+                        <div class="sidebar-panel">
+                            <h4>Tags</h4>
+                            <input type="text" id="doc-tags" placeholder="tag1, tag2, tag3">
+                        </div>
+                        <div class="sidebar-panel">
+                            <h4>Links</h4>
+                            <div id="doc-links" class="links-list">
+                                <p class="muted">No links detected</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn" id="btn-cancel-doc">Cancel</button>
+                    <button class="btn btn-primary" id="btn-save-doc">Save Document</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Upload Modal -->
+        <div class="modal" id="upload-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Upload Document</h3>
+                    <button class="btn-icon modal-close" id="close-upload">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="upload-area" id="upload-area">
+                        <div class="upload-icon">📁</div>
+                        <p>Drag & drop files here or click to browse</p>
+                        <p class="muted">Supports: .md, .txt, .pdf, .docx, .html</p>
+                        <input type="file" id="file-input" accept=".md,.txt,.pdf,.docx,.html" multiple hidden>
+                    </div>
+                    <div class="upload-progress" id="upload-progress" style="display: none;">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progress-fill"></div>
+                        </div>
+                        <p id="upload-status">Uploading...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Document View Modal -->
+        <div class="modal" id="doc-view-modal">
+            <div class="modal-content modal-large">
+                <div class="modal-header">
+                    <h3 id="view-doc-title">Document Title</h3>
+                    <div class="header-actions">
+                        <button class="btn" id="btn-edit-doc">Edit</button>
+                        <button class="btn btn-danger" id="btn-delete-doc">Delete</button>
+                        <button class="btn-icon modal-close" id="close-doc-view">×</button>
+                    </div>
+                </div>
+                <div class="modal-body">
+                    <div class="doc-metadata" id="view-doc-metadata">
+                        <!-- Metadata loaded dynamically -->
+                    </div>
+                    <div class="doc-content-view" id="view-doc-content">
+                        <!-- Content loaded dynamically -->
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Toast Notifications -->
+        <div class="toast-container" id="toast-container"></div>
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

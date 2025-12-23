@@ -1,0 +1,79 @@
+# ============================================
+# Knowledge Assistant - Docker Compose
+# ============================================
+
+version: '3.8'
+
+services:
+  # Main Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: knowledge-assistant
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///./data/knowledge.db
+      - CHROMA_PERSIST_DIRECTORY=./data/chroma
+      - DEFAULT_LLM_PROVIDER=${DEFAULT_LLM_PROVIDER:-ollama}
+      - DEFAULT_LLM_MODEL=${DEFAULT_LLM_MODEL:-llama3.2}
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-local}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-BAAI/bge-m3}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - DEBUG=false
+    volumes:
+      - app-data:/app/data
+    depends_on:
+      - ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Ollama for local LLM
+  ollama:
+    image: ollama/ollama:latest
+    container_name: knowledge-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+    # Uncomment for GPU support (NVIDIA)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # Redis for task queue (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: knowledge-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    profiles:
+      - full
+
+volumes:
+  app-data:
+    driver: local
+  ollama-data:
+    driver: local
+  redis-data:
+    driver: local
+
+# Network configuration
+networks:
+  default:
+    name: knowledge-network
