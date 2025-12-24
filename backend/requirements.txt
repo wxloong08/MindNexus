@@ -27,6 +27,7 @@ sentence-transformers>=3.3.0       # Latest: 3.3.1 - Embeddings
 FlagEmbedding>=1.2.11              # Latest: 1.2.11 - BGE-M3 support
 
 # Document Processing
+langchain-text-splitters>=0.3.0    # Semantic text chunking
 python-docx>=1.1.0                 # DOCX parsing
 pypdf>=5.1.0                       # Latest: 5.1.0 - PDF parsing
 markdown>=3.7.0                    # Markdown processing

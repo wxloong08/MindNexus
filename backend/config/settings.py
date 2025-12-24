@@ -74,6 +74,11 @@ class Settings(BaseSettings):
     chunk_overlap: int = 50
     max_file_size_mb: int = 50
     
+    # Semantic Chunking (embedding-based)
+    semantic_chunking_enabled: bool = True
+    semantic_similarity_threshold: float = 0.5  # Cosine similarity cutoff
+    semantic_min_chunk_size: int = 100
+    
     # Vault (Obsidian-style local .md file storage)
     vault_path: str = "./vault"
     

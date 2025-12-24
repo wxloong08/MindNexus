@@ -69,10 +69,23 @@ def get_vector_store() -> ChromaVectorStore:
 def get_document_processor() -> DocumentProcessor:
     """Get cached document processor instance"""
     settings = get_settings()
-    return create_document_processor(
-        chunk_size=settings.chunk_size,
-        chunk_overlap=settings.chunk_overlap,
-    )
+    
+    if settings.semantic_chunking_enabled:
+        # Get embedding service for semantic chunking
+        embedding_service = get_embedding_service()
+        return create_document_processor(
+            chunk_size=settings.chunk_size,
+            chunk_overlap=settings.chunk_overlap,
+            semantic_enabled=True,
+            similarity_threshold=settings.semantic_similarity_threshold,
+            min_chunk_size=settings.semantic_min_chunk_size,
+            embedding_function=embedding_service.embed_texts,
+        )
+    else:
+        return create_document_processor(
+            chunk_size=settings.chunk_size,
+            chunk_overlap=settings.chunk_overlap,
+        )
 
 
 # ============== Use Case Dependencies ==============

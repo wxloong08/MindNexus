@@ -362,12 +362,314 @@ class FileParser:
             raise
 
 
+class MarkdownPreprocessor:
+    """
+    Preprocess Markdown by splitting on header boundaries
+    Preserves document structure before semantic chunking
+    """
+    
+    @staticmethod
+    def split_by_headers(content: str) -> List[Dict[str, Any]]:
+        """
+        Split Markdown content by headers (# ## ###)
+        
+        Returns:
+            List of sections with title, level, content, start_char
+        """
+        # Pattern matches # ## ### etc at start of line
+        header_pattern = r'^(#{1,6})\s+(.+)$'
+        
+        sections = []
+        lines = content.split('\n')
+        current_section = {
+            "title": "",
+            "level": 0,
+            "content": "",
+            "start_char": 0,
+        }
+        current_char = 0
+        
+        for line in lines:
+            match = re.match(header_pattern, line)
+            
+            if match:
+                # Save previous section if has content
+                if current_section["content"].strip():
+                    sections.append(current_section)
+                
+                # Start new section
+                level = len(match.group(1))
+                title = match.group(2).strip()
+                current_section = {
+                    "title": title,
+                    "level": level,
+                    "content": line + "\n",
+                    "start_char": current_char,
+                }
+            else:
+                current_section["content"] += line + "\n"
+            
+            current_char += len(line) + 1  # +1 for newline
+        
+        # Don't forget last section
+        if current_section["content"].strip():
+            sections.append(current_section)
+        
+        # If no headers found, return entire content as one section
+        if not sections:
+            sections.append({
+                "title": "",
+                "level": 0,
+                "content": content,
+                "start_char": 0,
+            })
+        
+        return sections
+
+
+class SemanticDocumentProcessor(DocumentProcessor):
+    """
+    Semantic document chunking using embedding similarity
+    
+    Strategy:
+    1. Preprocess Markdown by splitting on headers
+    2. Within each section, use LangChain SemanticChunker
+    3. Merge small chunks, respect min_chunk_size
+    
+    This preserves document structure while ensuring
+    semantically coherent chunks for better RAG retrieval.
+    """
+    
+    def __init__(
+        self,
+        embedding_function: Any,
+        similarity_threshold: float = 0.5,
+        min_chunk_size: int = 100,
+        chunk_size: int = 500,
+        chunk_overlap: int = 50,
+    ):
+        super().__init__(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            min_chunk_size=min_chunk_size,
+        )
+        self.embedding_function = embedding_function
+        self.similarity_threshold = similarity_threshold
+        self._semantic_chunker = None
+        
+        logger.info(
+            "semantic_processor_initialized",
+            similarity_threshold=similarity_threshold,
+            min_chunk_size=min_chunk_size,
+        )
+    
+    def _get_semantic_chunker(self):
+        """Lazy initialization of SemanticChunker"""
+        if self._semantic_chunker is None:
+            try:
+                from langchain_text_splitters import SemanticChunker
+                from langchain_core.embeddings import Embeddings
+                
+                # Wrap our embedding function for LangChain compatibility
+                class EmbeddingWrapper(Embeddings):
+                    def __init__(wrapper_self, embed_fn):
+                        wrapper_self.embed_fn = embed_fn
+                    
+                    def embed_documents(wrapper_self, texts: List[str]) -> List[List[float]]:
+                        """Embed documents - sync wrapper for async function"""
+                        import asyncio
+                        try:
+                            loop = asyncio.get_event_loop()
+                            if loop.is_running():
+                                # Already in async context, create new loop
+                                import concurrent.futures
+                                with concurrent.futures.ThreadPoolExecutor() as executor:
+                                    future = executor.submit(
+                                        asyncio.run,
+                                        wrapper_self.embed_fn(texts)
+                                    )
+                                    return future.result()
+                            else:
+                                return loop.run_until_complete(wrapper_self.embed_fn(texts))
+                        except RuntimeError:
+                            return asyncio.run(wrapper_self.embed_fn(texts))
+                    
+                    def embed_query(wrapper_self, text: str) -> List[float]:
+                        """Embed single query"""
+                        results = wrapper_self.embed_documents([text])
+                        return results[0] if results else []
+                
+                embeddings = EmbeddingWrapper(self.embedding_function)
+                
+                # Configure SemanticChunker
+                # breakpoint_threshold_type: "percentile" works well
+                # Lower percentile = more aggressive splitting
+                self._semantic_chunker = SemanticChunker(
+                    embeddings=embeddings,
+                    breakpoint_threshold_type="percentile",
+                    breakpoint_threshold_amount=int(self.similarity_threshold * 100),
+                )
+                
+                logger.info("semantic_chunker_created")
+                
+            except ImportError as e:
+                logger.warning(
+                    "semantic_chunker_import_failed",
+                    error=str(e),
+                    fallback="using recursive character split",
+                )
+                return None
+        
+        return self._semantic_chunker
+    
+    def chunk_text(
+        self,
+        text: str,
+        chunk_size: Optional[int] = None,
+        chunk_overlap: Optional[int] = None,
+    ) -> List[TextChunk]:
+        """
+        Semantic chunking with Markdown preprocessing
+        
+        Flow:
+        1. Split by Markdown headers
+        2. Semantic chunk each section
+        3. Build TextChunk objects with positions
+        """
+        if not text or len(text) < self.min_chunk_size:
+            if text:
+                return [TextChunk(
+                    content=text,
+                    start_char=0,
+                    end_char=len(text),
+                    chunk_index=0,
+                )]
+            return []
+        
+        # Step 1: Markdown preprocessing
+        sections = MarkdownPreprocessor.split_by_headers(text)
+        logger.debug("markdown_sections_split", count=len(sections))
+        
+        # Step 2: Semantic chunking per section
+        chunker = self._get_semantic_chunker()
+        all_chunks = []
+        chunk_index = 0
+        
+        for section in sections:
+            section_content = section["content"]
+            section_start = section["start_char"]
+            
+            # Skip very short sections
+            if len(section_content.strip()) < self.min_chunk_size:
+                if section_content.strip():
+                    all_chunks.append(TextChunk(
+                        content=section_content.strip(),
+                        start_char=section_start,
+                        end_char=section_start + len(section_content),
+                        chunk_index=chunk_index,
+                        metadata={"section_title": section["title"]},
+                    ))
+                    chunk_index += 1
+                continue
+            
+            if chunker:
+                try:
+                    # Use SemanticChunker
+                    semantic_docs = chunker.split_text(section_content)
+                    
+                    for doc_text in semantic_docs:
+                        # Find position in original text
+                        start = text.find(doc_text[:50])
+                        if start == -1:
+                            start = section_start
+                        
+                        all_chunks.append(TextChunk(
+                            content=doc_text,
+                            start_char=start,
+                            end_char=start + len(doc_text),
+                            chunk_index=chunk_index,
+                            metadata={"section_title": section["title"]},
+                        ))
+                        chunk_index += 1
+                    
+                except Exception as e:
+                    logger.warning(
+                        "semantic_chunk_failed",
+                        section=section["title"],
+                        error=str(e),
+                    )
+                    # Fallback to parent's recursive split
+                    fallback_chunks = super().chunk_text(
+                        section_content,
+                        chunk_size=chunk_size,
+                        chunk_overlap=chunk_overlap,
+                    )
+                    for fc in fallback_chunks:
+                        fc.chunk_index = chunk_index
+                        fc.start_char += section_start
+                        fc.end_char = fc.start_char + len(fc.content)
+                        fc.metadata = {"section_title": section["title"]}
+                        all_chunks.append(fc)
+                        chunk_index += 1
+            else:
+                # No SemanticChunker available, use fallback
+                fallback_chunks = super().chunk_text(
+                    section_content,
+                    chunk_size=chunk_size,
+                    chunk_overlap=chunk_overlap,
+                )
+                for fc in fallback_chunks:
+                    fc.chunk_index = chunk_index
+                    fc.start_char += section_start
+                    fc.end_char = fc.start_char + len(fc.content)
+                    fc.metadata = {"section_title": section["title"]}
+                    all_chunks.append(fc)
+                    chunk_index += 1
+        
+        logger.info(
+            "semantic_chunking_complete",
+            total_chunks=len(all_chunks),
+            sections=len(sections),
+        )
+        
+        return all_chunks
+
+
 def create_document_processor(
     chunk_size: int = 500,
     chunk_overlap: int = 50,
+    semantic_enabled: bool = False,
+    similarity_threshold: float = 0.5,
+    min_chunk_size: int = 100,
+    embedding_function: Any = None,
 ) -> DocumentProcessor:
-    """Factory function for document processor"""
-    return DocumentProcessor(
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
-    )
+    """
+    Factory function for document processor
+    
+    Args:
+        chunk_size: Max characters per chunk
+        chunk_overlap: Overlap between chunks
+        semantic_enabled: Use embedding-based semantic chunking
+        similarity_threshold: Cosine similarity cutoff (0-1)
+        min_chunk_size: Minimum chunk size
+        embedding_function: Async function to generate embeddings
+    
+    Returns:
+        DocumentProcessor or SemanticDocumentProcessor
+    """
+    if semantic_enabled and embedding_function is not None:
+        logger.info("creating_semantic_document_processor")
+        return SemanticDocumentProcessor(
+            embedding_function=embedding_function,
+            similarity_threshold=similarity_threshold,
+            min_chunk_size=min_chunk_size,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
+    else:
+        logger.info("creating_standard_document_processor")
+        return DocumentProcessor(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
+
