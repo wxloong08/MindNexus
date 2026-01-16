@@ -4,7 +4,7 @@
 # ============================================
 
 # Stage 1: Builder
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
@@ -33,7 +33,7 @@ COPY scripts/download_model.py /tmp/download_model.py
 RUN python /tmp/download_model.py && rm /tmp/download_model.py
 
 # Stage 2: Runtime
-FROM python:3.11-slim as runtime
+FROM python:3.11-slim AS runtime
 
 WORKDIR /app
 

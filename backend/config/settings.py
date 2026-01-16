@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     
     # Embedding
     embedding_provider: Literal["local", "openai", "ollama"] = "local"
-    embedding_model: str = "BAAI/bge-m3"
+    embedding_model: str = "BAAI/bge-small-zh-v1.5"  # Lightweight model for low-memory servers (~100MB)
     openai_embedding_model: str = "text-embedding-3-small"
     ollama_embedding_model: str = "bge-m3"
     
