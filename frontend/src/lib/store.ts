@@ -128,41 +128,9 @@ interface AppState {
 // Generate unique ID (only called on client side actions)
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-// Initial notes with FIXED timestamps to avoid hydration mismatch
-const INITIAL_NOTES: Note[] = [
-    {
-        id: '1',
-        title: '关于 React Hooks 的学习',
-        content: '# React Hooks 学习笔记\n\nReact Hooks 是 React 16.8 的新增特性。它可以让你在不编写 class 的情况下使用 state 以及其他的 React 特性。\n\n## 常用 Hooks\n\n- **useState**: 用于管理组件状态\n- **useEffect**: 用于处理副作用\n- **useContext**: 用于跨组件共享状态\n\n> 自定义 Hooks 可以复用状态逻辑，这是非常强大的功能。\n\n```javascript\nconst [count, setCount] = useState(0);\n```',
-        tags: ['React', 'Frontend', 'JavaScript'],
-        type: 'markdown',
-        createdAt: '2024-12-01T10:00:00.000Z',
-    },
-    {
-        id: '2',
-        title: '2024年人工智能趋势报告',
-        content: '# 2024 AI 趋势\n\n报告指出，大语言模型 (LLM) 将继续主导 AI 领域。\n\n## 核心技术\n\n1. **RAG (检索增强生成)**: 解决了幻觉问题，成为企业落地的首选。\n2. **多模态模型**: 处理图像、视频是重点发展方向。\n3. **Agent (智能体)**: 将具备更强的规划能力。',
-        tags: ['AI', 'LLM', 'RAG', 'Report'],
-        type: 'pdf',
-        createdAt: '2024-12-10T14:30:00.000Z',
-    },
-    {
-        id: '3',
-        title: '知识图谱基础',
-        content: '# 知识图谱 (Knowledge Graph)\n\n这是一种用图模型来描述真实世界中万物之间关系的技术。\n\n- **节点**: 代表实体\n- **边**: 代表关系\n\n它在搜索引擎、推荐系统中有广泛应用。结合 `LLM` 可以增强推理能力。',
-        tags: ['AI', 'Graph', 'Data'],
-        type: 'markdown',
-        createdAt: '2024-12-15T09:00:00.000Z',
-    },
-    {
-        id: '4',
-        title: '项目 Alpha 架构设计',
-        content: '# 系统架构\n\n系统采用微服务架构。\n\n## 技术栈\n\n- 前端: **Next.js**\n- 后端: **Python FastAPI**\n- 数据库: PostgreSQL (关系型) + Neo4j (图数据库)',
-        tags: ['Project', 'Architecture', 'Backend', 'Frontend'],
-        type: 'markdown',
-        createdAt: '2024-12-20T16:00:00.000Z',
-    },
-];
+// Initial notes - empty for production (will be loaded from backend)
+// Keeping empty to avoid showing demo data before backend sync
+const INITIAL_NOTES: Note[] = [];
 
 const INITIAL_MESSAGE: ChatMessage = {
     role: 'assistant',
@@ -365,13 +333,21 @@ export const useAppStore = create<AppState>((set, get) => ({
                     tags: note.tags,
                 });
             } else {
-                await documentApi.create({
+                // Create new document and update frontend with backend ID
+                const created = await documentApi.create({
                     title: note.title,
                     content: note.content,
                     doc_type: note.type === 'pdf' ? 'pdf' : 'markdown',
                     tags: note.tags,
                     auto_index: true,
                 });
+                // Update the note ID in state to match backend
+                set((state) => ({
+                    notes: state.notes.map((n) =>
+                        n.id === note.id ? { ...n, id: created.id } : n
+                    ),
+                    selectedNoteId: state.selectedNoteId === note.id ? created.id : state.selectedNoteId,
+                }));
             }
         } catch (error) {
             console.error('Failed to save note to backend:', error);
