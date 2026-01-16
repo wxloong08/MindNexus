@@ -31,7 +31,7 @@ export const NoteEditor: React.FC = () => {
         viewMode,
         setViewMode,
         updateNote,
-        deleteNote,
+        deleteNoteFromBackend,
         // AI states
         suggestedTags,
         setSuggestedTags,
@@ -674,7 +674,7 @@ export const NoteEditor: React.FC = () => {
                 <div className="flex gap-3 pl-2 border-l border-slate-100 items-center">
                     {/* Save Status Indicator */}
                     <div className={`flex items-center gap-1.5 text-xs font-medium transition-colors ${saveStatus === 'saved' ? 'text-green-600' :
-                            saveStatus === 'saving' ? 'text-blue-600' : 'text-amber-600'
+                        saveStatus === 'saving' ? 'text-blue-600' : 'text-amber-600'
                         }`}>
                         {saveStatus === 'saved' && <Check size={14} />}
                         {saveStatus === 'saving' && <Loader size={14} className="animate-spin" />}
@@ -686,7 +686,7 @@ export const NoteEditor: React.FC = () => {
                     </div>
 
                     <button
-                        onClick={() => deleteNote(note.id)}
+                        onClick={() => deleteNoteFromBackend(note.id)}
                         className="text-slate-400 hover:text-red-500 transition-colors p-2"
                     >
                         <Trash2 size={18} />

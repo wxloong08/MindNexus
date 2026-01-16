@@ -58,6 +58,7 @@ interface AppState {
     createNote: (title?: string, content?: string) => void;
     updateNote: (id: string, updates: Partial<Note>) => void;
     deleteNote: (id: string) => void;
+    deleteNoteFromBackend: (id: string) => Promise<void>;
 
     // Chat state
     messages: ChatMessage[];
@@ -186,6 +187,20 @@ export const useAppStore = create<AppState>((set, get) => ({
             notes: state.notes.filter((n) => n.id !== id),
             selectedNoteId: state.selectedNoteId === id ? null : state.selectedNoteId,
         }));
+    },
+
+    deleteNoteFromBackend: async (id) => {
+        try {
+            // Delete from backend first
+            await documentApi.delete(id);
+            // Then update local state
+            set((state) => ({
+                notes: state.notes.filter((n) => n.id !== id),
+                selectedNoteId: state.selectedNoteId === id ? null : state.selectedNoteId,
+            }));
+        } catch (error) {
+            console.error('Failed to delete note from backend:', error);
+        }
     },
 
     // Chat state
