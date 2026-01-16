@@ -20,6 +20,8 @@ services:
     environment:
       - HOST=0.0.0.0
       - PORT=8000
+      # HuggingFace mirror for servers that can't access huggingface.co
+      - HF_ENDPOINT=https://hf-mirror.com
     volumes:
       # Persist SQLite database and ChromaDB
       - knowledge_data:/app/data
