@@ -73,6 +73,11 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("application_shutting_down")
+    
+    # Shutdown thread/process pools for document processing
+    from src.infrastructure.document_processing.processor import shutdown_executors
+    shutdown_executors()
+    
     await get_db_manager().close()
 
 

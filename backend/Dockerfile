@@ -44,8 +44,8 @@ ENV PYTHONDONTWRITEBYTECODE=1
 COPY --chown=appuser:appuser . .
 
 # Create data directories
-RUN mkdir -p /app/data/uploads /app/data/chroma && \
-    chown -R appuser:appuser /app/data
+RUN mkdir -p /app/data/uploads /app/data/chroma /app/vault && \
+    chown -R appuser:appuser /app/data /app/vault
 
 # Switch to non-root user
 USER appuser

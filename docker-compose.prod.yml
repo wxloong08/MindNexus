@@ -1,0 +1,66 @@
+# Knowledge Assistant - Production Docker Compose
+# Deployed alongside TravelMind (port 8000) and POD (port 8001/3002)
+# Ports:
+# - Backend: 8002 (Host) -> 8000 (Container)
+# - Frontend: 3003 (Host) -> 3000 (Container)
+
+services:
+  # ==================
+  # Backend API
+  # ==================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: knowledge-backend
+    ports:
+      - "8002:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+    volumes:
+      # Persist SQLite database and ChromaDB
+      - knowledge_data:/app/data
+      # Persist vault (markdown notes)
+      - knowledge_vault:/app/vault
+    networks:
+      - travelmind-network
+    restart: always
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ==================
+  # Frontend (Next.js)
+  # ==================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: /api
+    container_name: knowledge-frontend
+    ports:
+      - "3003:3000"
+    networks:
+      - travelmind-network
+    restart: always
+    depends_on:
+      - backend
+
+# Use existing TravelMind network
+networks:
+  travelmind-network:
+    external: true
+
+# Named volumes for data persistence
+volumes:
+  knowledge_data:
+    driver: local
+  knowledge_vault:
+    driver: local

@@ -306,8 +306,11 @@ class DocumentUseCase:
                 except Exception as e:
                     logger.warning("auto_tagging_failed", doc_id=doc_id, error=str(e))
             
-            # Chunk the document
-            text_chunks = self.document_processor.chunk_text(document.content)
+            # Chunk the document (use async if available for non-blocking)
+            if hasattr(self.document_processor, 'chunk_text_async'):
+                text_chunks = await self.document_processor.chunk_text_async(document.content)
+            else:
+                text_chunks = self.document_processor.chunk_text(document.content)
             
             if not text_chunks:
                 document.mark_indexed()

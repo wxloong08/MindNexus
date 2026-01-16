@@ -3,11 +3,47 @@ Document Processing Service
 Handles document parsing, chunking, and link extraction
 """
 import re
-from typing import List, Tuple, Optional, Dict, Any
+import asyncio
+from typing import List, Tuple, Optional, Dict, Any, Callable
 from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from functools import partial
 import structlog
 
 logger = structlog.get_logger()
+
+# Global executors for concurrent processing
+# ThreadPool: For embedding (C extensions release GIL)
+# ProcessPool: For pure Python CPU-intensive work
+_thread_executor: Optional[ThreadPoolExecutor] = None
+_process_executor: Optional[ProcessPoolExecutor] = None
+
+def get_thread_executor(max_workers: int = 4) -> ThreadPoolExecutor:
+    """Get or create thread pool executor"""
+    global _thread_executor
+    if _thread_executor is None:
+        _thread_executor = ThreadPoolExecutor(max_workers=max_workers)
+        logger.info("thread_pool_created", max_workers=max_workers)
+    return _thread_executor
+
+def get_process_executor(max_workers: int = 2) -> ProcessPoolExecutor:
+    """Get or create process pool executor"""
+    global _process_executor
+    if _process_executor is None:
+        _process_executor = ProcessPoolExecutor(max_workers=max_workers)
+        logger.info("process_pool_created", max_workers=max_workers)
+    return _process_executor
+
+def shutdown_executors():
+    """Shutdown executors gracefully (call on app shutdown)"""
+    global _thread_executor, _process_executor
+    if _thread_executor:
+        _thread_executor.shutdown(wait=True)
+        _thread_executor = None
+    if _process_executor:
+        _process_executor.shutdown(wait=True)
+        _process_executor = None
+    logger.info("executors_shutdown")
 
 
 @dataclass
@@ -633,6 +669,143 @@ class SemanticDocumentProcessor(DocumentProcessor):
         )
         
         return all_chunks
+    
+    async def chunk_text_async(
+        self,
+        text: str,
+        chunk_size: Optional[int] = None,
+        chunk_overlap: Optional[int] = None,
+    ) -> List[TextChunk]:
+        """
+        Async version of chunk_text using thread pool for embedding computation.
+        
+        This method runs CPU-intensive embedding calculations in a thread pool,
+        allowing the event loop to handle other requests.
+        
+        Note: Thread pool is effective because embedding libraries (PyTorch,
+        sentence-transformers) release the GIL during C/CUDA operations.
+        """
+        if not text or len(text) < self.min_chunk_size:
+            if text:
+                return [TextChunk(
+                    content=text,
+                    start_char=0,
+                    end_char=len(text),
+                    chunk_index=0,
+                )]
+            return []
+        
+        # Markdown preprocessing is fast (pure Python but simple)
+        sections = MarkdownPreprocessor.split_by_headers(text)
+        logger.debug("markdown_sections_split_async", count=len(sections))
+        
+        # Process sections concurrently using thread pool
+        loop = asyncio.get_event_loop()
+        executor = get_thread_executor()
+        
+        all_chunks = []
+        chunk_index = 0
+        
+        # Process each section - embedding computation happens in thread pool
+        for section in sections:
+            section_content = section["content"]
+            section_start = section["start_char"]
+            
+            # Skip very short sections
+            if len(section_content.strip()) < self.min_chunk_size:
+                if section_content.strip():
+                    all_chunks.append(TextChunk(
+                        content=section_content.strip(),
+                        start_char=section_start,
+                        end_char=section_start + len(section_content),
+                        chunk_index=chunk_index,
+                        metadata={"section_title": section["title"]},
+                    ))
+                    chunk_index += 1
+                continue
+            
+            # Run semantic chunking in thread pool
+            try:
+                section_chunks = await loop.run_in_executor(
+                    executor,
+                    self._chunk_section_sync,
+                    section_content,
+                    section["title"],
+                    text,
+                    section_start,
+                )
+                
+                for chunk in section_chunks:
+                    chunk.chunk_index = chunk_index
+                    all_chunks.append(chunk)
+                    chunk_index += 1
+                    
+            except Exception as e:
+                logger.warning(
+                    "async_semantic_chunk_failed",
+                    section=section["title"],
+                    error=str(e),
+                )
+                # Fallback to recursive split
+                fallback_chunks = super().chunk_text(
+                    section_content,
+                    chunk_size=chunk_size,
+                    chunk_overlap=chunk_overlap,
+                )
+                for fc in fallback_chunks:
+                    fc.chunk_index = chunk_index
+                    fc.start_char += section_start
+                    fc.end_char = fc.start_char + len(fc.content)
+                    fc.metadata = {"section_title": section["title"]}
+                    all_chunks.append(fc)
+                    chunk_index += 1
+        
+        logger.info(
+            "async_semantic_chunking_complete",
+            total_chunks=len(all_chunks),
+            sections=len(sections),
+        )
+        
+        return all_chunks
+    
+    def _chunk_section_sync(
+        self,
+        section_content: str,
+        section_title: str,
+        original_text: str,
+        section_start: int,
+    ) -> List[TextChunk]:
+        """
+        Synchronous helper for chunking a single section.
+        Called from thread pool in async context.
+        """
+        chunker = self._get_semantic_chunker()
+        chunks = []
+        
+        if chunker:
+            try:
+                semantic_docs = chunker.split_text(section_content)
+                
+                for doc_text in semantic_docs:
+                    start = original_text.find(doc_text[:50])
+                    if start == -1:
+                        start = section_start
+                    
+                    chunks.append(TextChunk(
+                        content=doc_text,
+                        start_char=start,
+                        end_char=start + len(doc_text),
+                        chunk_index=0,  # Will be set by caller
+                        metadata={"section_title": section_title},
+                    ))
+            except Exception:
+                # Will be caught by caller
+                raise
+        else:
+            # Return empty, caller will use fallback
+            raise RuntimeError("SemanticChunker not available")
+        
+        return chunks
 
 
 def create_document_processor(
