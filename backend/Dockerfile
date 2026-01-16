@@ -23,6 +23,15 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+# Pre-download embedding model (for offline deployment)
+# This caches the model in the image so no download is needed at runtime
+ARG HF_ENDPOINT=https://hf-mirror.com
+ENV HF_ENDPOINT=${HF_ENDPOINT}
+ENV HF_HOME=/opt/huggingface
+ENV TRANSFORMERS_CACHE=/opt/huggingface
+COPY scripts/download_model.py /tmp/download_model.py
+RUN python /tmp/download_model.py && rm /tmp/download_model.py
+
 # Stage 2: Runtime
 FROM python:3.11-slim as runtime
 
@@ -39,6 +48,13 @@ COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+
+# Copy pre-downloaded embedding model cache
+COPY --from=builder /opt/huggingface /opt/huggingface
+ENV HF_HOME=/opt/huggingface
+ENV TRANSFORMERS_CACHE=/opt/huggingface
+ENV HF_HUB_OFFLINE=1
+ENV TRANSFORMERS_OFFLINE=1
 
 # Copy application code
 COPY --chown=appuser:appuser . .
