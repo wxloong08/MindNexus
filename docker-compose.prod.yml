@@ -43,7 +43,8 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: /api
+        # Empty because api.ts routes already include /api prefix
+        NEXT_PUBLIC_API_URL: ""
     container_name: knowledge-frontend
     ports:
       - "3003:3000"
