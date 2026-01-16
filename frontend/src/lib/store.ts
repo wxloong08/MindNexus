@@ -129,6 +129,10 @@ interface AppState {
 // Generate unique ID (only called on client side actions)
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
+// Debounce map for auto-save (2 second delay per note)
+const saveDebounceMap = new Map<string, NodeJS.Timeout>();
+const SAVE_DEBOUNCE_MS = 2000;
+
 // Initial notes - empty for production (will be loaded from backend)
 // Keeping empty to avoid showing demo data before backend sync
 const INITIAL_NOTES: Note[] = [];
@@ -174,12 +178,40 @@ export const useAppStore = create<AppState>((set, get) => ({
             flashcards: [],
             showFlashcards: false,
         }));
+
+        // Auto-save new note to backend
+        const { saveNoteToBackend } = get();
+        saveNoteToBackend(newNote).catch((e) => {
+            console.error('Failed to save new note to backend:', e);
+        });
     },
 
     updateNote: (id, updates) => {
+        // Update local state immediately
         set((state) => ({
             notes: state.notes.map((n) => (n.id === id ? { ...n, ...updates } : n)),
         }));
+
+        // Debounced auto-save to backend (2 second delay)
+        // Clear existing timeout for this note
+        const existingTimeout = saveDebounceMap.get(id);
+        if (existingTimeout) {
+            clearTimeout(existingTimeout);
+        }
+
+        // Set new timeout
+        const timeout = setTimeout(() => {
+            const { notes, saveNoteToBackend } = get();
+            const note = notes.find(n => n.id === id);
+            if (note) {
+                saveNoteToBackend(note).catch((e) => {
+                    console.error('Auto-save failed:', e);
+                });
+            }
+            saveDebounceMap.delete(id);
+        }, SAVE_DEBOUNCE_MS);
+
+        saveDebounceMap.set(id, timeout);
     },
 
     deleteNote: (id) => {

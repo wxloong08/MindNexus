@@ -114,23 +114,19 @@ export const NoteEditor: React.FC = () => {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [handleSave]);
 
-    // Auto-save: 2 seconds after last change (Obsidian-style)
+    // Auto-save is now handled by updateNote in store.ts (2 second debounce)
+    // This useEffect tracks pending changes for UI feedback
     useEffect(() => {
-        if (note && saveStatus === 'unsaved') {
-            if (saveTimeoutRef.current) {
-                clearTimeout(saveTimeoutRef.current);
-            }
-            saveTimeoutRef.current = setTimeout(() => {
-                handleSave();
-            }, 2000);
+        // Mark as unsaved when note changes
+        if (note) {
+            setSaveStatus('unsaved');
+            // Automatically mark as saved after debounce period + buffer
+            const timeout = setTimeout(() => {
+                setSaveStatus('saved');
+            }, 2500); // 2s debounce + 0.5s buffer
+            return () => clearTimeout(timeout);
         }
-
-        return () => {
-            if (saveTimeoutRef.current) {
-                clearTimeout(saveTimeoutRef.current);
-            }
-        };
-    }, [note?.content, note?.title, note?.tags, saveStatus, handleSave]);
+    }, [note?.content, note?.title, note?.tags]);
 
     // AI Handlers
     const handleGenerateSmartTags = async () => {
@@ -315,8 +311,7 @@ export const NoteEditor: React.FC = () => {
             }
         }
 
-        updateNote(note.id, updates);
-        setSaveStatus('unsaved');  // Triggers auto-save after 2 seconds
+        updateNote(note.id, updates);  // Auto-save handled by store
     };
 
     return (
