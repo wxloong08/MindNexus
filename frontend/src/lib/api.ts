@@ -1,7 +1,7 @@
 import axios, { AxiosInstance } from 'axios';
 
-// API Base URL - defaults to localhost:8000 for development
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// API Base URL - empty string for production (relative path), localhost:8000 for dev
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 // Create axios instance
 const apiClient: AxiosInstance = axios.create({
