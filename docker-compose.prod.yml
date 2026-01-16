@@ -26,10 +26,10 @@ services:
       # Persist vault (markdown notes)
       - knowledge_vault:/app/vault
     networks:
-      - travelmind-network
+      - travelmind_travelmind-network
     restart: always
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -48,14 +48,14 @@ services:
     ports:
       - "3003:3000"
     networks:
-      - travelmind-network
+      - travelmind_travelmind-network
     restart: always
     depends_on:
       - backend
 
 # Use existing TravelMind network
 networks:
-  travelmind-network:
+  travelmind_travelmind-network:
     external: true
 
 # Named volumes for data persistence
