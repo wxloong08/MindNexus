@@ -30,7 +30,7 @@ class DocumentStatusSchema(str, Enum):
 class DocumentCreate(BaseModel):
     """Request schema for creating a document"""
     title: str = Field(..., min_length=1, max_length=500)
-    content: str = Field(..., min_length=1)
+    content: str = Field(default="")  # Allow empty content for new notes
     doc_type: DocumentTypeSchema = DocumentTypeSchema.MARKDOWN
     tags: Optional[List[str]] = None
     auto_index: bool = True

@@ -5,7 +5,7 @@ import { Search, Upload, Plus } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 
 export const TopBar: React.FC = () => {
-    const { searchQuery, setSearchQuery, createNote, setViewMode } = useAppStore();
+    const { searchQuery, setSearchQuery, createNote, setViewMode, activeTab } = useAppStore();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -21,6 +21,15 @@ export const TopBar: React.FC = () => {
             }, 800);
         }
     };
+
+    // Hide search and actions in chat tab (AI Assistant)
+    if (activeTab === 'chat') {
+        return (
+            <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-center px-6 flex-shrink-0">
+                <h1 className="text-lg font-semibold text-slate-700">AI 助手</h1>
+            </header>
+        );
+    }
 
     return (
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 flex-shrink-0">

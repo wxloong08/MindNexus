@@ -66,3 +66,5 @@ htmlcov/
 # Build
 *.pyc
 *.pyo
+mindnexus-backend.tar
+*.tar
