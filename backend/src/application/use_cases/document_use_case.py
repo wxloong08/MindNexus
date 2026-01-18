@@ -270,7 +270,10 @@ class DocumentUseCase:
         """
         Index a document: chunk, embed, and store in vector DB
         
-        This is the core RAG preparation step
+        This is the core RAG preparation step.
+        Uses delayed deletion strategy to prevent race conditions:
+        1. Generate new chunks and embeddings first
+        2. Then atomically delete old + insert new
         """
         document = await self.document_repo.get_by_id(doc_id)
         if not document:
@@ -280,10 +283,6 @@ class DocumentUseCase:
         try:
             document.status = DocumentStatus.PROCESSING
             await self.document_repo.update(document)
-            
-            # Delete existing chunks and vectors
-            await self.chunk_repo.delete_by_document(doc_id)
-            await self.vector_store.delete_by_document(doc_id)
             
             # Generate summary if enabled
             if self.enable_summarization and self.llm_service and len(document.content) > 200:
@@ -306,19 +305,22 @@ class DocumentUseCase:
                 except Exception as e:
                     logger.warning("auto_tagging_failed", doc_id=doc_id, error=str(e))
             
-            # Chunk the document (use async if available for non-blocking)
+            # Step 1: Generate new chunks (before deleting old ones)
             if hasattr(self.document_processor, 'chunk_text_async'):
                 text_chunks = await self.document_processor.chunk_text_async(document.content)
             else:
                 text_chunks = self.document_processor.chunk_text(document.content)
             
             if not text_chunks:
+                # No content to index, just clean up old chunks
+                await self.chunk_repo.delete_by_document(doc_id)
+                await self.vector_store.delete_by_document(doc_id)
                 document.mark_indexed()
                 await self.document_repo.update(document)
                 return True
             
-            # Create chunk entities
-            chunks = []
+            # Step 2: Create new chunk entities
+            new_chunks = []
             for tc in text_chunks:
                 chunk = DocumentChunk(
                     id=str(uuid.uuid4()),
@@ -328,13 +330,10 @@ class DocumentUseCase:
                     start_char=tc.start_char,
                     end_char=tc.end_char,
                 )
-                chunks.append(chunk)
+                new_chunks.append(chunk)
             
-            # Save chunks to database
-            await self.chunk_repo.create_many(chunks)
-            
-            # Generate embeddings
-            chunk_texts = [c.content for c in chunks]
+            # Step 3: Generate embeddings for new chunks (before deleting old)
+            chunk_texts = [c.content for c in new_chunks]
             embeddings = await self.embedding_service.embed_texts(chunk_texts)
             
             # Prepare metadata
@@ -345,12 +344,20 @@ class DocumentUseCase:
                     "chunk_index": c.chunk_index,
                     "tags": ",".join(document.tags),
                 }
-                for c in chunks
+                for c in new_chunks
             ]
             
-            # Store in vector database
+            # Step 4: Atomic replacement - delete old + insert new
+            # Delete old chunks and vectors (now that new ones are ready)
+            await self.chunk_repo.delete_by_document(doc_id)
+            await self.vector_store.delete_by_document(doc_id)
+            
+            # Insert new chunks to database
+            await self.chunk_repo.create_many(new_chunks)
+            
+            # Insert new vectors to ChromaDB
             await self.vector_store.add_documents(
-                ids=[c.id for c in chunks],
+                ids=[c.id for c in new_chunks],
                 embeddings=embeddings,
                 documents=chunk_texts,
                 metadatas=metadatas,
@@ -363,7 +370,7 @@ class DocumentUseCase:
             logger.info(
                 "document_indexed",
                 doc_id=doc_id,
-                chunks=len(chunks),
+                chunks=len(new_chunks),
                 tags=document.tags,
             )
             return True
